@@ -12,18 +12,18 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
 
+    # Step 1: Checkout repo
     - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Install unzip & ensure rsync
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y unzip rsync
+    # Step 2: Install required tools
+    - name: Install unzip & rsync
+      run: sudo apt-get update && sudo apt-get install -y unzip rsync
 
-    - name: Login to Azure via OIDC
+    # Step 3: Login to Azure (optional if you need Azure CLI)
+    - name: Login to Azure
       uses: azure/login@v1
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -31,26 +31,34 @@ jobs:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         allow-no-subscriptions: true
 
-    - name: Set up SSH key
+    # Step 4: Setup SSH
+    - name: Setup SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
-        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+        ssh-private-key: ${{ secrets.FRONTEND_VM_KEY }}
 
+    # Step 5: Deploy Frontend
     - name: Deploy Frontend
       run: |
-        rsync -avz --delete ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/var/www/frontend/
-        ssh azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+        rsync -avz -e "ssh -i ~/.ssh/frontend-vm_key.pem" ./frontend/ azureuser@${{ secrets.FRONTEND_IP }}:/var/www/frontend/
+        ssh -i ~/.ssh/frontend-vm_key.pem azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
           cd /var/www/frontend
           npm install
           npm run build
           sudo cp -r build/* /var/www/html/
         EOF
 
-    - name: Deploy Backend
+    # Step 6: Deploy Backend via Jump Host
+    - name: Deploy Backend via Frontend Jump Host
       run: |
-        rsync -avz --delete ./backend/ azureuser@${{ secrets.BACKEND_IP }}:/home/azureuser/backend/
-        ssh azureuser@${{ secrets.BACKEND_IP }} << 'EOF'
-          cd /home/azureuser/backend
-          npm install
-          pm2 restart backend-app || pm2 start index.js --name backend-app
+        # Copy backend code to frontend VM first
+        scp -i ~/.ssh/frontend-vm_key.pem -r ./backend/ azureuser@${{ secrets.FRONTEND_IP }}:~/backend-deploy/
+
+        # SSH into frontend, then backend
+        ssh -i ~/.ssh/frontend-vm_key.pem azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+          ssh -i ~/.ssh/backend-vm_key.pem azureuser@<BACKEND_PRIVATE_IP> << 'INNER'
+            cd /home/azureuser/backend
+            npm install
+            pm2 restart backend-app || pm2 start index.js --name backend-app
+          INNER
         EOF
