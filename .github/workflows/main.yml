@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    # Step 1: Checkout repo
+    # Step 1: Checkout repo locally (optional)
     - name: Checkout code
       uses: actions/checkout@v3
 
@@ -27,7 +27,7 @@ jobs:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         allow-no-subscriptions: true
 
-    # Step 3: Set up SSH key (frontend VM)
+    # Step 3: Set up SSH key for frontend VM
     - name: Set up SSH key
       uses: webfactory/ssh-agent@v0.9.0
       with:
@@ -37,25 +37,23 @@ jobs:
     - name: Deploy Frontend
       run: |
         ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-          set -e  # Stop on first error
+          set -e
 
           # Install Node.js and Git if missing
           if ! command -v node >/dev/null 2>&1; then
             curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs git
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs git unzip
           fi
 
-          # Create frontend folder with correct permissions
+          # Create frontend folder and set permissions
           sudo mkdir -p /var/www/frontend
           sudo chown azureuser:azureuser /var/www/frontend
           cd /var/www/frontend
 
-          # Clone repo if first time, else pull
-          if [ ! -d .git ]; then
-              git clone https://github.com/asfuu47/curd/frontned-app .
-          else
-              git pull origin main
-          fi
+          # Download repo ZIP from GitHub and unzip
+          curl -L -o frontend.zip https://github.com/asfuu47/curd/archive/refs/heads/main.zip
+          unzip -o frontend.zip
+          cd curd-main/frontned-app
 
           # Install dependencies and build
           npm install
@@ -66,7 +64,7 @@ jobs:
           sudo cp -r build/* /var/www/html/
         EOF
 
-    # Step 5: Deploy Backend (via frontend VM jump host)
+    # Step 5: Deploy Backend
     - name: Deploy Backend
       run: |
         ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
@@ -74,24 +72,22 @@ jobs:
 
           # SSH into backend VM (private subnet)
           ssh -o StrictHostKeyChecking=no azureuser@10.0.1.4 << 'INNER_EOF'
-            # Install Node.js and Git if missing
+            # Install Node.js and unzip if missing
             if ! command -v node >/dev/null 2>&1; then
               curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs git
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs unzip
             fi
 
-            # Navigate to backend folder
+            # Create backend folder if missing
             mkdir -p /home/azureuser/backend
             cd /home/azureuser/backend
 
-            # Clone repo if first time, else pull
-            if [ ! -d .git ]; then
-              git clone https://github.com/asfuu47/curd/backend .
-            else
-              git pull origin main
-            fi
+            # Download repo ZIP and unzip
+            curl -L -o backend.zip https://github.com/asfuu47/curd/archive/refs/heads/main.zip
+            unzip -o backend.zip
+            cd curd-main/backend
 
-            # Install dependencies and restart Node app with PM2
+            # Install dependencies and start/restart Node app
             npm install
             pm2 restart backend-app || pm2 start index.js --name backend-app
           INNER_EOF
