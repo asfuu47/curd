@@ -12,14 +12,18 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
 
-    # Step 1: Checkout repo locally (optional)
-    - name: Checkout code
+    - name: Checkout repo
       uses: actions/checkout@v3
 
-    # Step 2: Login to Azure via OIDC
-    - name: Login to Azure
+    - name: Install unzip & ensure rsync
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unzip rsync
+
+    - name: Login to Azure via OIDC
       uses: azure/login@v1
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -27,68 +31,26 @@ jobs:
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         allow-no-subscriptions: true
 
-    # Step 3: Set up SSH key for frontend VM
     - name: Set up SSH key
       uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.VM_SSH_KEY }}
 
-    # Step 4: Deploy Frontend
     - name: Deploy Frontend
       run: |
-        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-          set -e
-
-          # Install Node.js and Git if missing
-          if ! command -v node >/dev/null 2>&1; then
-            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs git unzip
-          fi
-
-          # Create frontend folder and set permissions
-          sudo mkdir -p /var/www/frontend
-          sudo chown azureuser:azureuser /var/www/frontend
+        rsync -avz --delete ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/var/www/frontend/
+        ssh azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
           cd /var/www/frontend
-
-          # Download repo ZIP from GitHub and unzip
-          curl -L -o frontend.zip https://github.com/asfuu47/curd/archive/refs/heads/main.zip
-          unzip -o frontend.zip
-          cd curd-main/frontned-app
-
-          # Install dependencies and build
           npm install
           npm run build
-
-          # Copy build to web server folder
-          sudo mkdir -p /var/www/html
           sudo cp -r build/* /var/www/html/
         EOF
 
-    # Step 5: Deploy Backend
     - name: Deploy Backend
       run: |
-        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-          set -e
-
-          # SSH into backend VM (private subnet)
-          ssh -o StrictHostKeyChecking=no azureuser@10.0.1.4 << 'INNER_EOF'
-            # Install Node.js and unzip if missing
-            if ! command -v node >/dev/null 2>&1; then
-              curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs unzip
-            fi
-
-            # Create backend folder if missing
-            mkdir -p /home/azureuser/backend
-            cd /home/azureuser/backend
-
-            # Download repo ZIP and unzip
-            curl -L -o backend.zip https://github.com/asfuu47/curd/archive/refs/heads/main.zip
-            unzip -o backend.zip
-            cd curd-main/backend
-
-            # Install dependencies and start/restart Node app
-            npm install
-            pm2 restart backend-app || pm2 start index.js --name backend-app
-          INNER_EOF
+        rsync -avz --delete ./backend/ azureuser@${{ secrets.BACKEND_IP }}:/home/azureuser/backend/
+        ssh azureuser@${{ secrets.BACKEND_IP }} << 'EOF'
+          cd /home/azureuser/backend
+          npm install
+          pm2 restart backend-app || pm2 start index.js --name backend-app
         EOF
