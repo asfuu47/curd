@@ -33,14 +33,12 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.VM_SSH_KEY }}
 
-    # Step 4: Deploy Frontend VM (public)
+    # Step 4: Deploy Frontend VM
     - name: Deploy Frontend
       run: |
-        # Rsync frontend folder to frontend VM (disable host key check)
         rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
         ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
 
-        # SSH into frontend VM to install dependencies and build
         ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
           set -e
           mkdir -p /home/azureuser/frontend
@@ -49,22 +47,18 @@ jobs:
           npm run build
         EOF
 
-    # Step 5: Deploy Backend VM via frontend jump host
+    # Step 5: Deploy Backend VM via frontend jump host (Option 1)
     - name: Deploy Backend
       run: |
-        ssh -A -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+        # Rsync directly to backend VM using frontend as jump host
+        rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
+        ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
+
+        # SSH directly to backend VM via jump host to install dependencies and restart app
+        ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no azureuser@10.0.1.4 << 'EOF'
           set -e
-
-          # Rsync backend folder to backend VM (via frontend jump)
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-          ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
-
-          # SSH to backend VM to install dependencies and restart Node app
-          ssh -o StrictHostKeyChecking=no azureuser@10.0.1.4 << 'INNER_EOF'
-            set -e
-            mkdir -p /home/azureuser/backend
-            cd /home/azureuser/backend
-            npm install
-            pm2 restart backend-app || pm2 start index.js --name backend-app
-          INNER_EOF
+          mkdir -p /home/azureuser/backend
+          cd /home/azureuser/backend
+          npm install
+          pm2 restart backend-app || pm2 start index.js --name backend-app
         EOF
