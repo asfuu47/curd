@@ -1,0 +1,35 @@
+name: Deploy MERN App
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true
+
+      - name: Deploy Frontend
+        run: |
+          # SSH to frontend VM and build/copy React app
+          # Example:
+          ssh azureuser@${{ secrets.FRONTEND_IP }} "cd /var/www/frontend && git pull && npm install && npm run build"
+
+      - name: Deploy Backend
+        run: |
+          # SSH or other method to deploy backend on private VM
