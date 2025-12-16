@@ -37,7 +37,7 @@ jobs:
     - name: Deploy Frontend
       run: |
         ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-          set -e  # stop on first error
+          set -e  # Stop on first error
 
           # Install Node.js and Git if missing
           if ! command -v node >/dev/null 2>&1; then
@@ -52,7 +52,7 @@ jobs:
 
           # Clone repo if first time, else pull
           if [ ! -d .git ]; then
-              git clone https://github.com/<your-frontend-repo>.git .
+              git clone https://github.com/asfuu47/curd/tree/main/frontned-app.git .
           else
               git pull origin main
           fi
@@ -86,7 +86,7 @@ jobs:
 
             # Clone repo if first time, else pull
             if [ ! -d .git ]; then
-              git clone https://github.com/<your-backend-repo>.git .
+              git clone https://github.com/asfuu47/curd/tree/main/backend.git .
             else
               git pull origin main
             fi
