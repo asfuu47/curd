@@ -52,7 +52,7 @@ jobs:
 
           # Clone repo if first time, else pull
           if [ ! -d .git ]; then
-              git clone https://github.com/asfuu47/curd/tree/main/frontned-app .
+              git clone https://github.com/asfuu47/curd/frontned-app .
           else
               git pull origin main
           fi
@@ -86,7 +86,7 @@ jobs:
 
             # Clone repo if first time, else pull
             if [ ! -d .git ]; then
-              git clone https://github.com/asfuu47/curd/tree/main/backend .
+              git clone https://github.com/asfuu47/curd/backend .
             else
               git pull origin main
             fi
