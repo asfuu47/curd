@@ -35,7 +35,7 @@ jobs:
           rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
 
-          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'FRONTEND_SSH'
+          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} <<'FRONTEND_SSH'
             set -e
             mkdir -p /home/azureuser/frontend
             cd /home/azureuser/frontend
@@ -49,14 +49,14 @@ jobs:
             ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
 
           ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
-            azureuser@10.0.1.4 << 'BACKEND_SSH'
-              set -e
-              mkdir -p /home/azureuser/backend
-              cd /home/azureuser/backend
+            azureuser@10.0.1.4 <<'BACKEND_SSH'
+            set -e
+            mkdir -p /home/azureuser/backend
+            cd /home/azureuser/backend
 
-              SERVICE_FILE=/etc/systemd/system/backend-app.service
-              if [ ! -f "$SERVICE_FILE" ]; then
-                sudo bash -c "cat > /etc/systemd/system/backend-app.service << 'SERVICE_EOF'
+            SERVICE_FILE=/etc/systemd/system/backend-app.service
+            if [ ! -f "$SERVICE_FILE" ]; then
+              sudo bash -c "cat > /etc/systemd/system/backend-app.service <<'SERVICE_EOF'
 [Unit]
 Description=Node.js Backend App
 After=network.target
@@ -71,10 +71,10 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 SERVICE_EOF"
-                sudo systemctl daemon-reload
-                sudo systemctl enable backend-app
-              fi
-
               sudo systemctl daemon-reload
-              sudo systemctl restart backend-app
+              sudo systemctl enable backend-app
+            fi
+
+            sudo systemctl daemon-reload
+            sudo systemctl restart backend-app
           BACKEND_SSH
