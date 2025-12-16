@@ -5,60 +5,53 @@ on:
     branches:
       - main
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
+      # 🧾 Checkout your repo
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # Step 1: Checkout repo
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      # 🧰 Install required tools (rsync, ssh)
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
 
-    # Step 2: Install required tools
-    - name: Install unzip & rsync
-      run: sudo apt-get update && sudo apt-get install -y unzip rsync
+      # 🔐 Setup SSH key for frontend VM
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.FRONTEND_VM_KEY }}
 
-    # Step 3: Login to Azure (optional if you need Azure CLI)
-    - name: Login to Azure
-      uses: azure/login@v1
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        allow-no-subscriptions: true
+      # 📖 Add frontend server to known_hosts (avoid "Host key verification failed")
+      - name: Add known host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.FRONTEND_IP }} >> ~/.ssh/known_hosts
 
-    # Step 4: Setup SSH
-    - name: Setup SSH
-      uses: webfactory/ssh-agent@v0.9.0
-      with:
-        ssh-private-key: ${{ secrets.FRONTEND_VM_KEY }}
-
-    # Step 5: Deploy Frontend
-    - name: Deploy Frontend
-      run: |
-        rsync -avz -e "ssh -i ~/.ssh/frontend-vm_key.pem" ./frontend/ azureuser@${{ secrets.FRONTEND_IP }}:/var/www/frontend/
-        ssh -i ~/.ssh/frontend-vm_key.pem azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-          cd /var/www/frontend
-          npm install
-          npm run build
-          sudo cp -r build/* /var/www/html/
-        EOF
-
-    # Step 6: Deploy Backend via Jump Host
-    - name: Deploy Backend via Frontend Jump Host
-      run: |
-        # Copy backend code to frontend VM first
-        scp -i ~/.ssh/frontend-vm_key.pem -r ./backend/ azureuser@${{ secrets.FRONTEND_IP }}:~/backend-deploy/
-
-        # SSH into frontend, then backend
-        ssh -i ~/.ssh/frontend-vm_key.pem azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-          ssh -i ~/.ssh/backend-vm_key.pem azureuser@<BACKEND_PRIVATE_IP> << 'INNER'
-            cd /home/azureuser/backend
+      # 🚀 Deploy Frontend using rsync
+      - name: Deploy Frontend
+        run: |
+          rsync -avz ./frontend/ azureuser@${{ secrets.FRONTEND_IP }}:/var/www/frontend/
+          ssh azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+            cd /var/www/frontend
             npm install
-            pm2 restart backend-app || pm2 start index.js --name backend-app
-          INNER
-        EOF
+            npm run build
+            sudo cp -r build/* /var/www/html/
+          EOF
+
+      # 📦 Deploy Backend via Jump Host (Frontend VM)
+      - name: Deploy Backend via Frontend VM
+        run: |
+          # 1) Copy backend code to the jump host first
+          rsync -avz ./backend/ azureuser@${{ secrets.FRONTEND_IP }}:~/backend-temp/
+
+          # 2) SSH into Frontend VM and then SSH into Backend VM private IP
+          ssh azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+            ssh -o "StrictHostKeyChecking=no" -i ~/.ssh/backend-vm_key.pem azureuser@${{ secrets.BACKEND_PRIVATE_IP }} << 'INNER'
+              cd /home/azureuser/backend
+              npm install
+              pm2 restart backend-app || pm2 start index.js --name backend-app
+            INNER
+          EOF
