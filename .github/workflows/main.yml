@@ -24,12 +24,24 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           allow-no-subscriptions: true
 
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+
       - name: Deploy Frontend
         run: |
-          # SSH to frontend VM and build/copy React app
-          # Example:
-          ssh azureuser@${{ secrets.FRONTEND_IP }} "cd /var/www/frontend && git pull && npm install && npm run build"
+          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+            cd /var/www/frontend
+            git pull origin main
+            npm install
+            npm run build
+            cp -r build/* /var/www/html/
+          EOF
 
       - name: Deploy Backend
         run: |
-          # SSH or other method to deploy backend on private VM
+          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+            # SSH into backend VM from frontend VM if private subnet
+            ssh azureuser@10.0.1.4 "cd /home/azureuser/backend && git pull origin main && npm install && pm2 restart backend-app || pm2 start index.js --name backend-app"
+          EOF
