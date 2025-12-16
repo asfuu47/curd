@@ -6,42 +6,92 @@ on:
       - main
 
 permissions:
-  id-token: write
+  id-token: write       # Required for Azure OIDC login
   contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
 
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          allow-no-subscriptions: true
+    # Step 1: Checkout repo
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Set up SSH key
-        uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+    # Step 2: Login to Azure via OIDC
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        allow-no-subscriptions: true
 
-      - name: Deploy Frontend
-        run: |
-          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-            cd /var/www/frontend
+    # Step 3: Set up SSH key (frontend VM)
+    - name: Set up SSH key
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+
+    # Step 4: Deploy Frontend
+    - name: Deploy Frontend
+      run: |
+        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+          set -e  # Exit on any error
+
+          # Install prerequisites if missing
+          if ! command -v node >/dev/null 2>&1; then
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            sudo apt-get install -y nodejs git
+          fi
+
+          # Create frontend folder if missing
+          mkdir -p /var/www/frontend
+          cd /var/www/frontend
+
+          # Clone repo if first time, else pull
+          if [ ! -d .git ]; then
+            git clone https://github.com/<your-frontend-repo>.git .
+          else
             git pull origin main
-            npm install
-            npm run build
-            cp -r build/* /var/www/html/
-          EOF
+          fi
 
-      - name: Deploy Backend
-        run: |
-          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
-            # SSH into backend VM from frontend VM if private subnet
-            ssh azureuser@10.0.1.4 "cd /home/azureuser/backend && git pull origin main && npm install && pm2 restart backend-app || pm2 start index.js --name backend-app"
-          EOF
+          # Install dependencies and build
+          npm install
+          npm run build
+
+          # Copy build to web server folder
+          mkdir -p /var/www/html
+          cp -r build/* /var/www/html/
+        EOF
+
+    # Step 5: Deploy Backend (via frontend VM jump host)
+    - name: Deploy Backend
+      run: |
+        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'EOF'
+          set -e
+
+          # SSH into backend VM (private subnet)
+          ssh -o StrictHostKeyChecking=no azureuser@10.0.1.4 << 'INNER_EOF'
+            # Install Node.js and Git if missing
+            if ! command -v node >/dev/null 2>&1; then
+              curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+              sudo apt-get install -y nodejs git
+            fi
+
+            # Navigate to backend folder
+            mkdir -p /home/azureuser/backend
+            cd /home/azureuser/backend
+
+            # Clone repo if first time, else pull
+            if [ ! -d .git ]; then
+              git clone https://github.com/<your-backend-repo>.git .
+            else
+              git pull origin main
+            fi
+
+            # Install dependencies and restart Node app with PM2
+            npm install
+            pm2 restart backend-app || pm2 start index.js --name backend-app
+          INNER_EOF
+        EOF
