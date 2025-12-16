@@ -32,9 +32,11 @@ jobs:
 
       - name: Deploy Frontend
         run: |
+          # Sync frontend code to VM
           rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
 
+          # Build frontend on VM
           ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} "bash -c '
             set -e
             mkdir -p /home/azureuser/frontend
@@ -45,35 +47,15 @@ jobs:
 
       - name: Deploy Backend
         run: |
-          # Sync backend to private VM via frontend jump host
+          # Sync backend code (with node_modules) and systemd service file
           rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
             ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
 
-          # Configure systemd service safely using echo
-          ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no azureuser@10.0.1.4 "bash -c '
-            set -e
-            mkdir -p /home/azureuser/backend
-            cd /home/azureuser/backend
-
-            SERVICE_FILE=/etc/systemd/system/backend-app.service
-            if [ ! -f \$SERVICE_FILE ]; then
-              sudo bash -c \"echo '[Unit]
-Description=Node.js Backend App
-After=network.target
-
-[Service]
-User=azureuser
-WorkingDirectory=/home/azureuser/backend
-ExecStart=/usr/bin/node /home/azureuser/backend/index.js
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target' > /etc/systemd/system/backend-app.service\"
+          # Move service file to systemd and restart backend
+          ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
+            azureuser@10.0.1.4 "bash -c '
+              sudo mv /home/azureuser/backend/backend-app.service /etc/systemd/system/backend-app.service
               sudo systemctl daemon-reload
               sudo systemctl enable backend-app
-            fi
-
-            sudo systemctl daemon-reload
-            sudo systemctl restart backend-app
+              sudo systemctl restart backend-app
           '"
