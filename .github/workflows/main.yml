@@ -14,56 +14,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-    # 1️⃣ Checkout code
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    # 2️⃣ Azure OIDC Login
-    - name: Login to Azure
-      uses: azure/login@v1
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        allow-no-subscriptions: true
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true
 
-    # 3️⃣ SSH Key Setup
-    - name: Set up SSH key
-      uses: webfactory/ssh-agent@v0.9.0
-      with:
-        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+      - name: Set up SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
 
-    # 4️⃣ Deploy Frontend
-    - name: Deploy Frontend
-      run: |
-        rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-        ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
+      - name: Deploy Frontend
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
 
-        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} <<EOF
-          set -e
-          mkdir -p /home/azureuser/frontend
-          cd /home/azureuser/frontend
-          npm install
-          npm run build
-EOF
+          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} << 'FRONTEND_SSH'
+            set -e
+            mkdir -p /home/azureuser/frontend
+            cd /home/azureuser/frontend
+            npm install
+            npm run build
+          FRONTEND_SSH
 
-    # 5️⃣ Deploy Backend via Jump Host
-    - name: Deploy Backend
-      run: |
-        # Sync backend to private VM via jump host
-        rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
-        ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
+      - name: Deploy Backend
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
+            ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
 
-        # SSH into backend to create/reload systemd service
-        ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
-          azureuser@10.0.1.4 <<EOF
-          set -e
-          mkdir -p /home/azureuser/backend
-          cd /home/azureuser/backend
+          ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
+            azureuser@10.0.1.4 << 'BACKEND_SSH'
+              set -e
+              mkdir -p /home/azureuser/backend
+              cd /home/azureuser/backend
 
-          SERVICE_FILE=/etc/systemd/system/backend-app.service
-          if [ ! -f \$SERVICE_FILE ]; then
-            sudo bash -c "cat > /etc/systemd/system/backend-app.service <<EOL
+              SERVICE_FILE=/etc/systemd/system/backend-app.service
+              if [ ! -f "$SERVICE_FILE" ]; then
+                sudo bash -c "cat > /etc/systemd/system/backend-app.service << 'SERVICE_EOF'
 [Unit]
 Description=Node.js Backend App
 After=network.target
@@ -77,11 +70,11 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-EOL"
-            sudo systemctl daemon-reload
-            sudo systemctl enable backend-app
-          fi
+SERVICE_EOF"
+                sudo systemctl daemon-reload
+                sudo systemctl enable backend-app
+              fi
 
-          sudo systemctl daemon-reload
-          sudo systemctl restart backend-app
-EOF
+              sudo systemctl daemon-reload
+              sudo systemctl restart backend-app
+          BACKEND_SSH
