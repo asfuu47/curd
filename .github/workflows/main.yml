@@ -12,50 +12,55 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
 
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    # 1️⃣ Checkout repository
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          allow-no-subscriptions: true
+    # 2️⃣ Azure login using OIDC
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set up SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+    # 3️⃣ Setup SSH key for frontend VM
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
 
-      - name: Deploy Frontend
-        run: |
-          # Sync frontend code to VM
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-            ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
+    # ---------------- FRONTEND ----------------
+    - name: Deploy Frontend
+      run: |
+        echo "Sync frontend code to Frontend VM"
+        rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
+          ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
 
-          # Build frontend on VM
-          ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} "bash -c '
-            set -e
-            mkdir -p /home/azureuser/frontend
-            cd /home/azureuser/frontend
-            npm install
-            npm run build
-          '"
+        echo "Build frontend on Frontend VM"
+        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} "
+          set -e
+          mkdir -p /home/azureuser/frontend
+          cd /home/azureuser/frontend
+          npm install
+          npm run build
+        "
 
-      - name: Deploy Backend
-        run: |
-          # Sync backend code (with node_modules) and systemd service file
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
-            ./backend/ azureuser@10.0.1.4:/home/azureuser/backend/
+    # ---------------- BACKEND ----------------
+    - name: Deploy Backend
+      run: |
+        echo "Sync backend code and service file via frontend VM jump host"
+        rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
+          ./backend/ azureuser@10.0.2.4:/home/azureuser/backend/
 
-          # Move service file to systemd and restart backend
-          ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
-            azureuser@10.0.1.4 "bash -c '
-              sudo mv /home/azureuser/backend/backend-app.service /etc/systemd/system/backend-app.service
-              sudo systemctl daemon-reload
-              sudo systemctl enable backend-app
-              sudo systemctl restart backend-app
-          '"
+        echo "Deploy backend-app.service and restart backend service"
+        ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
+          azureuser@10.0.2.4 "
+            sudo cp /home/azureuser/backend/backend-app.service /etc/systemd/system/backend-app.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable backend-app
+            sudo systemctl restart backend-app
+        "
