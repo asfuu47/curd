@@ -55,9 +55,11 @@ app.post('/items', (req, res) => {
     res.json(newItem);
 });
 
+
 // PUT update item
 app.put('/items/:id', (req, res) => {
     const items = readData();
+    // Convert both to strings to ensure they match!
     const item = items.find(i => String(i.id) === String(req.params.id));
     
     if (!item) return res.status(404).json({ error: 'Item not found' });
@@ -72,7 +74,7 @@ app.delete('/items/:id', (req, res) => {
     let items = readData();
     const initialLength = items.length;
     
-    // Filter out the item to delete
+    // Filter using string comparison
     items = items.filter(i => String(i.id) !== String(req.params.id));
 
     if (items.length === initialLength) {
@@ -85,4 +87,20 @@ app.delete('/items/:id', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
+
+// ... after app.listen ...
+
+// Force the process to stay alive
+setInterval(() => {
+  console.log('Keep-alive heartbeat');
+}, 3600000);
+
+process.stdin.resume();
+
+// Handle graceful shutdown (optional but good practice)
+process.on('SIGTERM', () => {
+    server.close(() => {
+        console.log('Process terminated');
+    });
 });
