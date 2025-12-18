@@ -25,36 +25,30 @@ jobs:
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
-              # 1. Install Node.js & NPM if not present
-              if ! command -v node &> /dev/null; then
-                echo 'Installing Node.js...'
-                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                sudo apt-get install -y nodejs
+              # Create the directory if it's gone
+              mkdir -p /home/azureuser/app
+              cd /home/azureuser/app
+
+              # If the repo folder isn't there, clone it
+              if [ ! -d 'frontned-app' ]; then
+                git clone https://github.com/asfuu47/curd/ temp_repo
+                mv temp_repo/frontned-app .  # Adjust this path based on your repo structure
+                rm -rf temp_repo
+              else
+                cd frontned-app
+                git pull origin main
               fi
 
-              # 2. Add Swap (Virtual RAM) to prevent 'Killed' errors
-              if [ ! -f /swapfile ]; then
-                sudo fallocate -l 2G /swapfile
-                sudo chmod 600 /swapfile
-                sudo mkswap /swapfile
-                sudo swapon /swapfile
-              fi
-
-              # 3. Build the project
+              # Proceed with build
               cd /home/azureuser/app/frontned-app
               npm install
               npm run build
-
-              # 4. Deploy to Nginx
-              if [ -d 'build' ]; then
-                sudo rm -rf /var/www/html/*
-                sudo cp -r build/* /var/www/html/
-                sudo chown -R www-data:www-data /var/www/html
-                sudo systemctl restart nginx
-              else
-                echo 'Build failed!'
-                exit 1
-              fi
+              
+              # Deploy to Nginx
+              sudo rm -rf /var/www/html/*
+              sudo cp -r build/* /var/www/html/
+              sudo chown -R www-data:www-data /var/www/html
+              sudo systemctl restart nginx
             "
 
   deploy-backend:
