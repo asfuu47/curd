@@ -21,7 +21,7 @@ jobs:
       - name: Sync Frontend Only
         run: |
           az vm run-command invoke \
-            --resource-group crud \
+            --resource-group curd \
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
@@ -55,7 +55,7 @@ jobs:
       - name: Sync Backend Only
         run: |
           az vm run-command invoke \
-            --resource-group crud \
+            --resource-group curd \
             --name backend-vm \
             --command-id RunShellScript \
             --scripts "
