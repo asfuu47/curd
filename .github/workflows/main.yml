@@ -18,27 +18,39 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-- name: Sync Frontend Only
+      - name: Build and Sync Frontend
         run: |
           az vm run-command invoke \
             --resource-group <YOUR_RG_NAME> \
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
-              # Go to the react folder
               cd /home/azureuser/app/frontned-app
               
-              # Install and Build
+              # 1. Add 2GB of Virtual RAM so the build doesn't crash
+              if [ ! -f /swapfile ]; then
+                sudo fallocate -l 2G /swapfile
+                sudo chmod 600 /swapfile
+                sudo mkswap /swapfile
+                sudo swapon /swapfile
+                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              fi
+
+              # 2. Now run the build (it won't get 'Killed' now)
               npm install
               npm run build
               
-              # Clean the destination and copy NEW files
-              sudo rm -rf /var/www/html/*
-              sudo cp -r build/* /var/www/html/
-              
-              # Fix permissions so Nginx can see them
-              sudo chown -R www-data:www-data /var/www/html
-              sudo systemctl restart nginx
+              # 3. Move the FINISHED product to Nginx
+              if [ -d 'build' ]; then
+                sudo rm -rf /var/www/html/*
+                sudo cp -r build/* /var/www/html/
+                sudo chown -R www-data:www-data /var/www/html
+                sudo systemctl restart nginx
+                echo 'Build successful!'
+              else
+                echo 'Build failed - folder not found'
+                exit 1
+              fi
             "
 
   deploy-backend:
