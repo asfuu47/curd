@@ -21,7 +21,7 @@ jobs:
       - name: Build and Sync Frontend
         run: |
           az vm run-command invoke \
-            --resource-group <YOUR_RG_NAME> \
+            --resource-group curd \
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
