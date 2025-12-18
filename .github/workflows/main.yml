@@ -25,30 +25,34 @@ jobs:
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
-              cd /home/azureuser/app/frontned-app
-              
-              # 1. Add 2GB of Virtual RAM so the build doesn't crash
+              # 1. Install Node.js & NPM if not present
+              if ! command -v node &> /dev/null; then
+                echo 'Installing Node.js...'
+                curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                sudo apt-get install -y nodejs
+              fi
+
+              # 2. Add Swap (Virtual RAM) to prevent 'Killed' errors
               if [ ! -f /swapfile ]; then
                 sudo fallocate -l 2G /swapfile
                 sudo chmod 600 /swapfile
                 sudo mkswap /swapfile
                 sudo swapon /swapfile
-                echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
               fi
 
-              # 2. Now run the build (it won't get 'Killed' now)
+              # 3. Build the project
+              cd /home/azureuser/app/frontned-app
               npm install
               npm run build
-              
-              # 3. Move the FINISHED product to Nginx
+
+              # 4. Deploy to Nginx
               if [ -d 'build' ]; then
                 sudo rm -rf /var/www/html/*
                 sudo cp -r build/* /var/www/html/
                 sudo chown -R www-data:www-data /var/www/html
                 sudo systemctl restart nginx
-                echo 'Build successful!'
               else
-                echo 'Build failed - folder not found'
+                echo 'Build failed!'
                 exit 1
               fi
             "
