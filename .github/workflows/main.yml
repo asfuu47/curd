@@ -1,66 +1,76 @@
-name: Deploy MERN App
-
+name: Deploy MERN (Sparse Sync)
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  deploy:
+  deploy-frontend:
     runs-on: ubuntu-latest
-
     steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # 1️⃣ Checkout repository
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Sync Frontend Only
+        run: |
+          az vm run-command invoke \
+            --resource-group crud \
+            --name frontend-vm \
+            --command-id RunShellScript \
+            --scripts "
+              mkdir -p /home/azureuser/app
+              cd /home/azureuser/app
+              if [ ! -d '.git' ]; then
+                git init
+                git remote add origin https://github.com/asfuu47/curd
+                git config core.sparseCheckout true
+                echo 'frontned-app/' >> .git/info/sparse-checkout
+              fi
+              git pull origin main
+              cd frontned-app
+              npm install
+              npm run build
+              sudo rm -rf /var/www/html/*
+              sudo cp -r build/* /var/www/html/
+              sudo systemctl restart nginx
+            "
 
-    # 2️⃣ Azure login using OIDC
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    # 3️⃣ Setup SSH key for frontend VM
-    - name: Setup SSH
-      uses: webfactory/ssh-agent@v0.9.0
-      with:
-        ssh-private-key: ${{ secrets.VM_SSH_KEY }}
-
-    # ---------------- FRONTEND ----------------
-    - name: Deploy Frontend
-      run: |
-        echo "Sync frontend code to Frontend VM"
-        rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
-          ./frontned-app/ azureuser@${{ secrets.FRONTEND_IP }}:/home/azureuser/frontend/
-
-        echo "Build frontend on Frontend VM"
-        ssh -o StrictHostKeyChecking=no azureuser@${{ secrets.FRONTEND_IP }} "
-          set -e
-          mkdir -p /home/azureuser/frontend
-          cd /home/azureuser/frontend
-          npm install
-          npm run build
-        "
-
-    # ---------------- BACKEND ----------------
-    - name: Deploy Backend
-      run: |
-        echo "Sync backend code and service file via frontend VM jump host"
-        rsync -avz -e "ssh -o StrictHostKeyChecking=no -J azureuser@${{ secrets.FRONTEND_IP }}" \
-          ./backend/ azureuser@10.0.2.4:/home/azureuser/backend/
-
-        echo "Deploy backend-app.service and restart backend service"
-        ssh -J azureuser@${{ secrets.FRONTEND_IP }} -o StrictHostKeyChecking=no \
-          azureuser@10.0.2.4 "
-            sudo cp /home/azureuser/backend/backend-app.service /etc/systemd/system/backend-app.service
-            sudo systemctl daemon-reload
-            sudo systemctl enable backend-app
-            sudo systemctl restart backend-app
-        "
+      - name: Sync Backend Only
+        run: |
+          az vm run-command invoke \
+            --resource-group crud \
+            --name backend-vm \
+            --command-id RunShellScript \
+            --scripts "
+              mkdir -p /home/azureuser/app
+              cd /home/azureuser/app
+              if [ ! -d '.git' ]; then
+                git init
+                git remote add origin https://github.com/asfuu47/curd
+                git config core.sparseCheckout true
+                echo 'backend/' >> .git/info/sparse-checkout
+              fi
+              git pull origin main
+              cd backend
+              npm install
+              sudo cp backend-app.service /etc/systemd/system/
+              sudo systemctl daemon-reload
+              sudo systemctl restart backend-app
+            "
