@@ -18,27 +18,26 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sync Frontend Only
+- name: Sync Frontend Only
         run: |
           az vm run-command invoke \
-            --resource-group curd \
+            --resource-group <YOUR_RG_NAME> \
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
-              mkdir -p /home/azureuser/app
-              cd /home/azureuser/app
-              if [ ! -d '.git' ]; then
-                git init
-                git remote add origin https://github.com/asfuu47/curd
-                git config core.sparseCheckout true
-                echo 'frontned-app/' >> .git/info/sparse-checkout
-              fi
-              git pull origin main
-              cd frontned-app
+              # Go to the react folder
+              cd /home/azureuser/app/frontned-app
+              
+              # Install and Build
               npm install
               npm run build
+              
+              # Clean the destination and copy NEW files
               sudo rm -rf /var/www/html/*
               sudo cp -r build/* /var/www/html/
+              
+              # Fix permissions so Nginx can see them
+              sudo chown -R www-data:www-data /var/www/html
               sudo systemctl restart nginx
             "
 
