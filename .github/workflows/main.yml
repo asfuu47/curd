@@ -68,10 +68,25 @@ jobs:
             --name backend-vm \
             --command-id RunShellScript \
             --scripts "
+              # 1. Create the parent directory if it's gone
+              mkdir -p /home/azureuser/app
+              cd /home/azureuser/app
+
+              # 2. If the backend folder isn't there, clone the repo and move it
+              if [ ! -d 'backend' ]; then
+                git clone https://github.com/asfuu47/curd/ temp_repo_backend
+                mv temp_repo_backend/backend .  # This matches your folder structure
+                rm -rf temp_repo_backend
+              else
+                cd backend
+                git pull origin main
+              fi
+
+              # 3. Now that we are sure the folder exists, go inside
               cd /home/azureuser/app/backend
               npm install
               
-              # Overwrite the broken service file with the correct paths
+              # 4. Create/Update the service file
               sudo bash -c 'cat > /etc/systemd/system/backend-app.service <<EOF
               [Unit]
               Description=Node.js Backend App
@@ -88,7 +103,7 @@ jobs:
               WantedBy=multi-user.target
               EOF'
 
-              # Apply changes and restart
+              # 5. Apply changes and restart
               sudo systemctl daemon-reload
               sudo systemctl enable backend-app
               sudo systemctl restart backend-app
