@@ -1,4 +1,4 @@
-name: Deploy MERN (Dockerized)
+name: Deploy MERN (Dockerized & Surgical)
 on:
   push:
     branches: [ main ]
@@ -12,7 +12,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Build and Run Backend Container
+      - name: Deploy Backend (Sparse)
         run: |
           az vm run-command invoke \
             --resource-group curd \
@@ -22,13 +22,15 @@ jobs:
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
               
-              # Clone if folder doesn't exist, otherwise pull
+              # Initialize sparse-checkout to pull ONLY backend folder
               if [ ! -d 'curd' ]; then
-                git clone https://github.com/asfuu47/curd.git
+                git clone --filter=blob:none --no-checkout https://github.com/asfuu47/curd.git
               fi
-              cd curd && git pull origin main
+              cd curd
+              git sparse-checkout set backend
+              git pull origin main
 
-              # Build and Restart Container
+              # Build and Run
               cd backend
               sudo docker build -t backend-image .
               sudo docker stop mern-backend || true
@@ -47,7 +49,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Build and Run Frontend Container
+      - name: Deploy Frontend (Sparse)
         run: |
           az vm run-command invoke \
             --resource-group curd \
@@ -56,12 +58,16 @@ jobs:
             --scripts "
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
+              
+              # Initialize sparse-checkout to pull ONLY frontned-app folder
               if [ ! -d 'curd' ]; then
-                git clone https://github.com/asfuu47/curd.git
+                git clone --filter=blob:none --no-checkout https://github.com/asfuu47/curd.git
               fi
-              cd curd && git pull origin main
+              cd curd
+              git sparse-checkout set frontned-app
+              git pull origin main
 
-              # Build and Restart Container
+              # Build and Run
               cd frontned-app
               sudo docker build -t frontend-image .
               sudo docker stop mern-frontend || true
