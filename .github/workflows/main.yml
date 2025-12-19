@@ -1,4 +1,4 @@
-name: Production MERN Deployment
+name: Secure MERN Deployment (Private Backend)
 on:
   push:
     branches: [ main ]
@@ -12,18 +12,17 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy Backend to Private VM
+      - name: Deploy Backend (Private VM)
         run: |
           az vm run-command invoke \
             --resource-group curd \
             --name backend-vm \
             --command-id RunShellScript \
             --scripts "
-              # Navigate to app directory
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
               
-              # Sparse checkout logic
+              # 1. Sparse Checkout (Only backend files)
               if [ ! -d 'curd' ]; then
                 git clone --filter=blob:none --no-checkout https://github.com/asfuu47/curd.git
               fi
@@ -32,14 +31,15 @@ jobs:
               git sparse-checkout set backend
               git pull origin main
 
-              # Build and Restart Container
+              # 2. Fix the 'items.json' Folder vs File issue
               cd backend
+              if [ -d 'items.json' ]; then rm -rf items.json; fi
+              if [ ! -f 'items.json' ]; then echo '[]' > items.json; fi
+              chmod 666 items.json
+
+              # 3. Build & Force Restart
               sudo docker build -t backend-image .
-              
-              # Force remove prevents the 'Created' stuck state
               sudo docker rm -f mern-backend || true
-              
-              # Run with Volume for data persistence
               sudo docker run -d \
                 --name mern-backend \
                 -p 5000:5000 \
@@ -57,18 +57,17 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy Frontend to Public VM
+      - name: Deploy Frontend (Public VM)
         run: |
           az vm run-command invoke \
             --resource-group curd \
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
-              # Navigate to app directory
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
               
-              # Sparse checkout logic
+              # 1. Sparse Checkout (Only frontend files)
               if [ ! -d 'curd' ]; then
                 git clone --filter=blob:none --no-checkout https://github.com/asfuu47/curd.git
               fi
@@ -77,14 +76,10 @@ jobs:
               git sparse-checkout set frontned-app
               git pull origin main
 
-              # Build and Restart Container
+              # 2. Build & Force Restart
               cd frontned-app
               sudo docker build -t frontend-image .
-              
-              # Force remove old container
               sudo docker rm -f mern-frontend || true
-              
-              # Run Frontend on Port 80
               sudo docker run -d \
                 --name mern-frontend \
                 -p 80:80 \
