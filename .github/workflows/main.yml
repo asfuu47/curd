@@ -1,4 +1,4 @@
-name: Deploy MERN (Dockerized & Surgical)
+name: Deploy MERN Stack to Azure
 on:
   push:
     branches: [ main ]
@@ -12,32 +12,41 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy Backend (Sparse)
+      - name: Setup Docker & Deploy Backend
         run: |
           az vm run-command invoke \
             --resource-group curd \
             --name backend-vm \
             --command-id RunShellScript \
             --scripts "
+              # 1. Install Docker if missing
+              if ! command -v docker &> /dev/null; then
+                sudo apt-get update
+                sudo apt-get install -y ca-certificates curl gnupg
+                sudo install -m 0755 -d /etc/apt/keyrings
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+                sudo chmod a+r /etc/apt/keyrings/docker.gpg
+                echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$VERSION_CODENAME\") stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                sudo apt-get update
+                sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+                sudo usermod -aG docker azureuser
+              fi
+
+              # 2. Sync Code
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
-              
-              # Initialize sparse-checkout to pull ONLY backend folder
               if [ ! -d 'curd' ]; then
-                git clone --filter=blob:none --no-checkout https://github.com/asfuu47/curd.git
+                git clone https://github.com/asfuu47/curd.git
               fi
               cd curd
-              git sparse-checkout set backend
               git pull origin main
 
-              # Build and Run
+              # 3. Build & Run Backend
               cd backend
               sudo docker build -t backend-image .
               sudo docker stop mern-backend || true
               sudo docker rm mern-backend || true
-              sudo docker run -d --name mern-backend -p 5000:5000 \
-                -v /home/azureuser/app/curd/backend/items.json:/app/items.json \
-                --restart always backend-image
+              sudo docker run -d --name mern-backend -p 5000:5000 --restart always backend-image
             "
 
   deploy-frontend:
@@ -49,25 +58,36 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy Frontend (Sparse)
+      - name: Setup Docker & Deploy Frontend
         run: |
           az vm run-command invoke \
             --resource-group curd \
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
+              # 1. Install Docker if missing
+              if ! command -v docker &> /dev/null; then
+                sudo apt-get update
+                sudo apt-get install -y ca-certificates curl gnupg
+                sudo install -m 0755 -d /etc/apt/keyrings
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+                sudo chmod a+r /etc/apt/keyrings/docker.gpg
+                echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$VERSION_CODENAME\") stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                sudo apt-get update
+                sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+                sudo usermod -aG docker azureuser
+              fi
+
+              # 2. Sync Code
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
-              
-              # Initialize sparse-checkout to pull ONLY frontned-app folder
               if [ ! -d 'curd' ]; then
-                git clone --filter=blob:none --no-checkout https://github.com/asfuu47/curd.git
+                git clone https://github.com/asfuu47/curd.git
               fi
               cd curd
-              git sparse-checkout set frontned-app
               git pull origin main
 
-              # Build and Run
+              # 3. Build & Run Frontend
               cd frontned-app
               sudo docker build -t frontend-image .
               sudo docker stop mern-frontend || true
