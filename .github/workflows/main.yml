@@ -1,81 +1,61 @@
-name: Deploy MERN (Sparse Sync)
+name: Deploy MERN Stack to Azure VMs
+
 on:
   push:
     branches: [ main ]
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
-  deploy-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Build and Sync Frontend
-        run: |
-          az vm run-command invoke \
-            --resource-group curd \
-            --name frontend-vm \
-            --command-id RunShellScript \
-            --scripts "
-              mkdir -p /home/azureuser/app
-              cd /home/azureuser/app
-
-              if [ ! -d 'frontned-app' ]; then
-                git clone https://github.com/asfuu47/curd/ temp_repo
-                mv temp_repo/frontned-app .
-                rm -rf temp_repo
-              else
-                cd frontned-app
-                git pull origin main
-              fi
-
-              cd /home/azureuser/app/frontned-app
-              npm install
-              npm run build
-              
-              sudo rm -rf /var/www/html/*
-              sudo cp -r build/* /var/www/html/
-              sudo chown -R www-data:www-data /var/www/html
-              sudo systemctl restart nginx
-            "
-
   deploy-backend:
     runs-on: ubuntu-latest
     steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: Deploy Backend
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy Backend to VM
         run: |
           az vm run-command invoke \
             --resource-group curd \
             --name backend-vm \
             --command-id RunShellScript \
             --scripts "
-              cd /home/azureuser/app/backend || exit
-              
-              # 1. Pull the fixed server.js from GitHub
-              git pull origin main
+              cd /home/azureuser/app/backend
+              sudo git pull origin main
+              sudo docker build -t backend-image .
+              sudo docker stop mern-backend || true
+              sudo docker rm mern-backend || true
+              sudo docker run -d --name mern-backend -p 5000:5000 \
+                -v /home/azureuser/app/backend/items.json:/app/items.json \
+                --restart always backend-image
+            "
 
-              # 2. Install dependencies
-              npm install
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-              # 3. Fix permissions for the azureuser service
-              sudo chown -R azureuser:azureuser /home/azureuser/app/backend
-              
-              # 4. Restart the native Linux service
-              sudo systemctl daemon-reload
-              sudo systemctl restart backend-app
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy Frontend to VM
+        run: |
+          az vm run-command invoke \
+            --resource-group curd \
+            --name frontend-vm \
+            --command-id RunShellScript \
+            --scripts "
+              cd /home/azureuser/app/frontned-app
+              sudo git pull origin main
+              sudo docker build -t frontend-image .
+              sudo docker stop mern-frontend || true
+              sudo docker rm mern-frontend || true
+              sudo docker run -d --name mern-frontend -p 80:80 --restart always frontend-image
             "
