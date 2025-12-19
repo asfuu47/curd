@@ -25,26 +25,22 @@ jobs:
             --name frontend-vm \
             --command-id RunShellScript \
             --scripts "
-              # Create the directory if it's gone
               mkdir -p /home/azureuser/app
               cd /home/azureuser/app
 
-              # If the repo folder isn't there, clone it
               if [ ! -d 'frontned-app' ]; then
                 git clone https://github.com/asfuu47/curd/ temp_repo
-                mv temp_repo/frontned-app .  # Adjust this path based on your repo structure
+                mv temp_repo/frontned-app .
                 rm -rf temp_repo
               else
                 cd frontned-app
                 git pull origin main
               fi
 
-              # Proceed with build
               cd /home/azureuser/app/frontned-app
               npm install
               npm run build
               
-              # Deploy to Nginx
               sudo rm -rf /var/www/html/*
               sudo cp -r build/* /var/www/html/
               sudo chown -R www-data:www-data /var/www/html
@@ -68,35 +64,18 @@ jobs:
             --name backend-vm \
             --command-id RunShellScript \
             --scripts "
-              # 1. Create the parent directory if it's gone
-              mkdir -p /home/azureuser/app
-              cd /home/azureuser/app
+              cd /home/azureuser/app/backend || exit
+              
+              # 1. Pull the fixed server.js from GitHub
+              git pull origin main
 
-              # 2. Sync Code
-              if [ ! -d 'backend' ]; then
-                git clone https://github.com/asfuu47/curd/ temp_repo_backend
-                mv temp_repo_backend/backend .
-                rm -rf temp_repo_backend
-              else
-                cd backend
-                git pull origin main
-              fi
-
-              # 3. Install Dependencies
-              cd /home/azureuser/app/backend
+              # 2. Install dependencies
               npm install
 
-              # 4. Setup PM2 (The "Always-Running" Logic)
-              # Install PM2 globally if it's not already there
-              sudo npm install -g pm2
-
-              # Stop the old systemd service if it's still running
-              sudo systemctl stop backend-app || true
-              sudo systemctl disable backend-app || true
-
-              # Start or Restart the app using PM2
-              pm2 restart backend-api || pm2 start server.js --name 'backend-api'
+              # 3. Fix permissions for the azureuser service
+              sudo chown -R azureuser:azureuser /home/azureuser/app/backend
               
-              # Ensure PM2 saves the process list to survive reboots
-              pm2 save
+              # 4. Restart the native Linux service
+              sudo systemctl daemon-reload
+              sudo systemctl restart backend-app
             "
